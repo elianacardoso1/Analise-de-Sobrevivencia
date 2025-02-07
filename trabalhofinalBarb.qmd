@@ -1,0 +1,872 @@
+---
+title: "Analise de sobrevivência"
+subtitle: "Tempo até a ocorrência da tuberculose"
+author: "Eliana, Luanna, Barbara, Maria Cecília, Sofia, Victor"
+date: "02/03/2025"  # Data atual
+date-format: short  # formatação dd/mm/aaaa
+lang: pt  # linguagem
+toc: true  # índice
+number-sections: true
+fig-cap-location: top  # localização do título da figura
+geometry:
+  - top=3cm
+  - left=3cm
+  - right=2cm
+  - bottom=2cm
+tbl-cap-location: top
+df-print: kable  # saída dos data frames serem kable
+fig-width: 10
+fig-height: 4
+format: 
+  html:
+    self-contained: true  # tornar o HTML autocontido
+    theme: flatly
+  pdf: 
+    documentclass: scrreprt
+  docx: default
+editor: 
+  markdown: 
+    wrap: 72
+editor_options:
+  chunk_output_type: console
+output: 
+  pdf_document:
+    margin: 1in
+    df_print:
+      digits: 3
+  word_document:
+    fig_caption: true
+    df_print: kable
+execute:
+  echo: false
+  warning: false
+---
+
+
+# Introdução
+
+```{r}
+library(readxl)
+library(dplyr)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(survival)
+library(survminer)
+library(dplyr)
+library(kableExtra)
+
+setwd("C:/Users/eliana.cardoso/OneDrive - Fundação Dom Cabral/Documentos/GitHub/Analise de Sobrevivencia")
+library(readxl)
+hiv_tuberc <- read_excel("hiv_tuberc.xlsx")
+
+#Remove 4 NAs
+hiv_tuberc2 = hiv_tuberc %>%  drop_na()
+
+# Carregar pacote dplyr
+library(dplyr)
+
+# Transformando as colunas
+hiv_tuberc2 <- hiv_tuberc2 %>%
+  mutate(
+    sex = as.factor(sex),         # Transformar 'sex' em fator
+    esc = as.factor(esc),        # Transformar 'esc' em numérico
+    idade = as.numeric(idade),    # Transformar 'idade' em numérico
+    udi = as.factor(udi),        # Transformar 'udi' em numérico
+    sexual =as.factor(sexual),  # Transformar 'sexual' em numérico
+    candida = as.factor(candida),# Transformar 'candida' em numérico
+    hemato = as.factor(hemato),  # Transformar 'hemato' em numérico
+    herpes = as.factor(herpes),  # Transformar 'herpes' em numérico
+    pneumo = as.factor(pneumo)  # Transformar 'pneumo' em numérico
+     # Transformar 'status_tuberc' em numérico
+  # Transformar 'faixa_idade' em fator
+  )
+
+
+
+```
+
+Os dados utilizados neste projeto referem-se a um estudo sobre o tempo
+até a ocorrência de doenças oportunistas em uma coorte de pacientes HIV
+positivos atendidos em um Hospital Universitário. As variáveis foram
+obtidas a partir de prontuários clínicos. Para cada paciente,
+registrou-se o tempo até a ocorrência de algumas doenças ou
+sintomatologias caracteristicamente relacionadas à imunodepressão, como
+candidíase, tuberculose, sinais hematológicos, herpes zoster, pneumonia
+por Pneumocistis.
+
+O banco de dados é composto por 11 variáveis: nove covariáveis (oito
+categóricas e uma numérica), o tempo de acompanhamento e uma variável
+indicadora de ocorrência de tuberculose. No estudo, o tempo até a
+ocorrência da tuberculose foi registrado como variável resposta, com
+censura em casos onde as pacientes não foram acompanhadas até o
+surgimento da doença (Ver @tbl-tabela).
+
+```{r}
+#| tbl-cap: Descrição das variáveis utilizadas no estudo sobre tuberculose
+#| label: tbl-tabela
+
+library(knitr)
+library(kableExtra)
+# Criando a tabela de variáveis com duas colunas: "Variável" e "Descrição"
+tabela_variaveis <- data.frame(
+  Variável = c(
+    "Sexo",
+    "Escolaridade",
+    "Idade",
+    "Uso de drogas injetáveis",
+    "Status da doença",
+    "Tempo até a ocorrência",
+    "Candidíase",
+    "Sinais hematológicos",
+    "Herpes zoster",
+    "Pneumonia",
+    "Tuberculose"
+  ),
+  Descrição = c(
+    "1 - Masculino, 2 - Feminino.",
+    "0 - Sem escolaridade, 1 - Até quatro anos de estudo, 2 - Ensino fundamental, 3 - Ensino médio, 4 - Ensino superior.",
+    "Idade em anos na entrada do estudo.",
+    "0 - Não, 1 - Sim.",
+    "0 - Censura, 1 - Ocorrência da doença.",
+    "Tempo até a ocorrência da doença Tuberculose.",
+    "0 - Não, 1 - Sim.",
+    "0 - Não, 1 - Sim.",
+    "0 - Não, 1 - Sim.",
+    "0 - Não, 1 - Sim.",
+    "0 - Não, 1 - Sim."
+  )
+)
+
+# Gerando a tabela formatada sem cores
+kable(tabela_variaveis)
+
+```
+
+# Metodologia
+
+Primeiramente, foi realizada uma análise descritiva das variáveis em
+estudo. Na análise de sobrevivência, essa etapa consiste em utilizar
+métodos não-paramétricos. Quase todas as covariáveis são dicotômicas, e,
+portanto, foi possível construir as estimativas de Kaplan-Meier para
+comparar as duas categorias. Isso foi feito para as 8 covariáveis
+categóricas, e também foi testada a hipótese de igualdade das duas
+curvas utilizando os testes de Wilcoxon e log-rank. Além disso, foi
+analisado se essas covariáveis atendem à suposição de riscos
+proporcionais.
+
+A variável "idade" foi analisada utilizando o modelo de Cox para
+verificar a presença de risco proporcional. Ela também foi estratificada
+para análise de diferentes faixas etárias.
+
+A próxima etapa da análise consistiu em modelar separadamente cada uma
+das covariáveis com a variável resposta. O objetivo dessa etapa foi
+selecionar as variáveis explicativas (covariáveis) que devem prosseguir
+para a modelagem. O critério utilizado neste trabalho foi manter as
+variáveis que apresentaram valores de p inferiores a 0,25 em pelo menos
+um dos testes de Wilcoxon e log-rank na comparação das curvas de
+sobrevivência.
+
+No modelo de Cox, as variáveis incluídas no modelo inicial foram aquelas que apresentaram significância estatística no teste de Wilcoxon ou log-rank, além de atenderem ao pressuposto de riscos proporcionais. Após essa seleção inicial, foi realizado um ajuste passo a passo, no qual a variável com o maior p-valor foi removida iterativamente, até que o modelo final contivesse apenas variáveis estatisticamente significativas. Esse processo garantiu um modelo mais parcimonioso e robusto, mantendo apenas os preditores mais relevantes para a análise da sobrevivência. 
+
+No modelo paramétrico, foi realizado um teste de comparação entre os
+modelos de gama generalizada, lognormal, Weibull e exponencial para
+escolher o melhor modelo que se ajustasse aos dados. Após essa análise,
+foi utilizado o método de backward selection para escolher o modelo
+final com as variáveis que mais explicam o tempo até a ocorrência da
+tuberculose.
+
+Antes de proceder à interpretação das estimativas dos parâmetros do
+modelo ajustado, foram analisados os resíduos para confirmar a adequação
+do modelo final escolhido, tanto para o modelo paramétrico quanto para o
+semi-paramétrico.
+
+# Resultados
+
+## Analise Descritiva e Exploratória
+
+```{r}
+#| fig-cap: Curva de Kaplan-Meier para tuberculose
+#| label: fig-fig1
+
+
+
+km_geral <-  survfit(Surv(tempo_tuberc, status_tuberc) ~ 1, data = hiv_tuberc2)
+
+plot(km_geral, xlab = "Dias de acompanhamento", ylab = "S(t) estimado")
+
+#cox.zph(coxph(Surv(tempo_tuberc, status_tuberc) ~ 1, data = hiv_tuberc2))
+
+```
+
+O gráfico mostra a evolução da probabilidade de não desenvolver
+tuberculose ao longo do tempo ( Ver @fig-fig1). Com o tempo, a probabilidade de"sobreviver" (ou seja, de não desenvolver tuberculose) diminui à medida
+que mais indivíduos são diagnosticados com a doença. Esse gráfico ajuda
+a identificar em que momento os casos de tuberculose se acumulam mais
+rapidamente ou se há períodos de maior risco. 
+
+```{r}
+#| fig-cap: Curvas de Kaplan-Meier para sexo
+#| label: fig-fig2
+
+km_sexo = survfit(Surv(tempo_tuberc, status_tuberc) ~ sex, data = hiv_tuberc2)
+
+# Plotando a curva de Kaplan-Meier
+plot(km_sexo, col = c("red", "blue"), 
+     xlab = "Dias de acompanhamento", 
+     ylab = "S(t) estimado")
+
+# Adicionando a legenda
+legend("bottomright", legend = c("Feminino", "Masculino"),
+       col = c("red", "blue"), lty = 1, bty = "n")
+
+# Adicionando o título ao gráfico
+title("Curvas de Kaplan-Meier para sexo")
+
+
+#cox.zph(coxph(Surv(tempo_tuberc, status_tuberc) ~ sex, data = hiv_tuberc2))
+
+```
+
+A curva de Kaplan-Meier para o sexo mostra a probabilidade de não
+desenvolver tuberculose ao longo do tempo, separada entre homens e
+mulheres  ( Ver @fig-fig2). No gráfico, a curva das mulheres (vermelha) está acima da
+curva dos homens (azul), indicando que as mulheres têm uma maior
+probabilidade de não desenvolver a doença ao longo do tempo, ou seja,
+elas permanecem "saudáveis" por mais tempo. Em contraste, os homens têm
+um risco maior, com a curva masculina caindo mais rapidamente, sugerindo
+que a probabilidade de desenvolver tuberculose é maior entre eles. Esse
+padrão pode indicar que o sexo masculino está associado a um risco
+elevado de tuberculose, enquanto o sexo feminino seria um fator de
+proteção. Para a variável sex0, o p-valor = 0.86, indicando que não há evidência de violação da suposição de proporcionalidade dos riscos.
+
+```{r}
+#| fig-cap: Curvas de Kaplan-Meier para escolariedade
+#| label: fig-fig3
+
+km_esc = survfit(Surv(tempo_tuberc, status_tuberc)~ esc, data = hiv_tuberc2)
+
+plot(km_esc, col = c("red", "blue", "darkgreen", "orange", "purple"),
+     xlab = "Dias de acompanhamento",
+     ylab = "S(t) estimado")
+
+legend("bottomright",legend = c("0","1", "2", "3", "4"),
+       col = c("red", "blue", "darkgreen", "orange", "purple"),
+       lty = 1 ,
+       bty = "n")
+# Suspeita de violar o pressuposto de riscos proporcionais
+
+
+
+
+#cox.zph(coxph(Surv(tempo_tuberc, status_tuberc) ~ esc, data = hiv_tuberc2))
+
+# Não viola
+#--
+```
+
+O gráfico de Kaplan-Meier mostra as curvas de sobrevivência
+estratificadas por níveis de escolaridade  ( Ver @fig-fig3), indicando que grupos com
+maior escolaridade (principalmente o ensino superior) tendem a ter maior
+sobrevida, enquanto o grupo sem escolaridade apresenta uma curva mais
+baixa, embora com poucas observações (7), o que pode limitar a
+confiabilidade dessa estimativa. As curvas não violam o pressuposto de
+riscos proporcionais, permitindo o uso adequado do modelo de Cox para
+análise mais detalhada.Para a variável escolaridade, o p-valor = 0.31, indicando que não há evidência de violação da suposição de proporcionalidade dos riscos.
+
+```{r}
+#| fig-cap: Curvas de Kaplan-Meier para Uso de drogas injetáveis
+#| label: fig-fig4
+
+km_udi = survfit(Surv(tempo_tuberc, status_tuberc)~ udi, data = hiv_tuberc2)
+
+plot(km_udi, col = c("blue", "darkgreen"),
+     xlab = "Dias de acompanhamento",
+     ylab = "S(t) estimado")
+legend("bottomright",legend = c("Não","Sim"),
+       col = c( "blue", "darkgreen"),
+       lty = 1 ,
+       bty = "n")
+# Suspeita de violar o pressuposto de riscos proporcionais
+
+#cox.zph(coxph(Surv(tempo_tuberc, status_tuberc) ~ udi, data = hiv_tuberc2))
+
+# Não viola
+```
+
+O gráfico de Kaplan-Meier apresenta as curvas de sobrevivência para
+indivíduos que usam ou não drogas injetáveis  ( Ver @fig-fig4). Observa-se que o grupo que
+não usa drogas injetáveis (linha azul) possui uma probabilidade de
+sobrevivência maior ao longo do tempo em comparação ao grupo que usa
+(linha verde), até o dia 1100, aproximadamente. Depois disso, as curvas
+são invertidas. A curva daqueles que usam drogas injetáveis se
+estabiliza perto do dia 200, uma vez que, entre aqueles que são
+usuários, o último que teve ocorrência da doença foi no dia 206. Apesar
+disso, as curvas não violam o pressuposto de riscos proporcionais,
+permitindo o uso do modelo de Cox para análise adicional. Para a variável escolaridade, o p-valor = 0.092, indicando que não há evidência de violação da suposição de proporcionalidade dos riscos.
+
+```{r}
+#| fig-cap: Curvas de Kaplan-Meier para sexualidade
+#| label: fig-fig5
+
+
+km_sexual = survfit(Surv(tempo_tuberc, status_tuberc)~ sexual, data = hiv_tuberc2)
+
+plot(km_sexual, col = c("blue", "darkgreen"),
+     xlab = "Dias de acompanhamento",
+     ylab = "S(t) estimado")
+
+legend("bottomright",legend =  c("Não","Sim"),
+       col = c( "blue", "darkgreen"),
+       lty = 1 ,
+       bty = "n")
+
+#cox.zph(coxph(Surv(tempo_tuberc, status_tuberc) ~ sexual, data = hiv_tuberc2))
+```
+
+O gráfico de Kaplan-Meier apresenta as curvas de sobrevivência para
+indivíduos de acordo com a orientação sexual  ( Ver @fig-fig5).. Observa-se que o grupo de
+heterossexuais (linha azul) possui uma probabilidade de sobrevivência
+parecida ao longo do tempo em comparação aos não heterossexuais (linha
+verde), até o dia 600, aproximadamente. Depois disso, as curvas são
+invertidas. Para a variável sexualidade, o p-valor = 0.16, indicando que não há evidência de violação da suposição de proporcionalidade dos riscos.
+
+```{r}
+#| fig-cap: Curvas de Kaplan-Meier para Candidíase
+#| label: fig-fig6
+
+
+km_candida = survfit(Surv(tempo_tuberc, status_tuberc)~ candida, data = hiv_tuberc2)
+
+plot(km_candida, col = c("blue", "darkgreen"),
+     xlab = "Dias de acompanhamento",
+     ylab = "S(t) estimado")
+
+legend("bottomright",legend =  c("Não","Sim"),
+       col = c( "blue", "darkgreen"),
+       lty = 1 ,
+       bty = "n")
+
+#cox.zph(coxph(Surv(tempo_tuberc, status_tuberc) ~ candida, data = hiv_tuberc2))
+```
+
+A curva daqueles com candidíase (verde) está acima daqueles sem (azul),
+indicando que pessoas com candidíase têm uma maior probabilidade de não
+desenvolver a doença ao longo do tempo, ou seja, elas permanecem
+"saudáveis" por mais tempo  ( Ver @fig-fig6). Aqueles sem candidíase têm um risco maior,
+com a curva caindo mais rapidamente, sugerindo que a probabilidade de
+desenvolver tuberculose é maior entre eles. O pressuposto de risco proporcional é atendido. Para a variável Candidíase o p-valor = 0.25, indicando que não há evidência de violação da suposição de proporcionalidade dos riscos.
+
+```{r}
+#| fig-cap: "Curvas de Kaplan-Meier para Sinais hematológicos"
+#| label: fig-fig7
+
+km_hemato = survfit(Surv(tempo_tuberc, status_tuberc)~ hemato, data = hiv_tuberc2)
+
+plot(km_hemato, col = c("blue", "darkgreen"),
+     xlab = "Dias de acompanhamento",
+     ylab = "S(t) estimado")
+
+legend("bottomright",legend =  c("Não","Sim"),
+       col = c( "blue", "darkgreen"),
+       lty = 1 ,
+       bty = "n")
+
+#cox.zph(coxph(Surv(tempo_tuberc, status_tuberc) ~ hemato, data = hiv_tuberc2))
+```
+
+A curva daqueles com sinais hematológicos (verde) está acima daqueles
+sem (azul), indicando que pessoas com sinais hematológicos têm uma maior
+probabilidade de não desenvolver a doença ao longo do tempo, ou seja,
+elas permanecem "saudáveis" por mais tempo  ( Ver @fig-fig7). Aqueles sem sinais
+hematológicos têm um risco maior, com a curva caindo mais rapidamente,
+sugerindo que a probabilidade de desenvolver tuberculose é maior entre
+eles.Para a variável Sinais hematológicos, o p-valor = 0.045, indicando que  há evidência de violação da suposição de proporcionalidade dos riscos.
+
+```{r}
+#| fig-cap: Curvas de Kaplan-Meier para herpes
+#| label: fig-fig8
+
+
+km_herpes = survfit(Surv(tempo_tuberc, status_tuberc)~ herpes, data = hiv_tuberc2)
+
+plot(km_herpes, col = c("blue", "darkgreen"),
+     xlab = "Dias de acompanhamento",
+     ylab = "S(t) estimado")
+
+legend("bottomright",legend = c("Não","Sim"),
+       col = c( "blue", "darkgreen"),
+       lty = 1 ,
+       bty = "n")
+
+#cox.zph(coxph(Surv(tempo_tuberc, status_tuberc) ~ herpes, data = hiv_tuberc2))
+```
+
+A curva daqueles com herpes (verde) está acima daqueles sem (azul),
+indicando que pessoas com herpes têm uma maior probabilidade de não
+desenvolver a doença ao longo do tempo, ou seja, elas permanecem
+"saudáveis" por mais tempo  ( Ver @fig-fig8). Aqueles sem herpes têm um risco maior, com a
+curva caindo mais rapidamente, sugerindo que a probabilidade de
+desenvolver tuberculose é maior entre eles. Para a variável herpes, o p-valor = 0.72, indicando que não há evidência de violação da suposição de proporcionalidade dos riscos.
+
+```{r}
+#| fig-cap: Curvas de Kaplan-Meier para Pneumonia 
+#| label: fig-fig9
+
+km_pneumo = survfit(Surv(tempo_tuberc, status_tuberc)~ pneumo, data = hiv_tuberc2)
+
+plot(km_pneumo, col = c("blue", "darkgreen"),
+     xlab = "Dias de acompanhamento",
+     ylab = "S(t) estimado")
+
+legend("bottomright",legend =  c("Não","Sim"),
+       col = c( "blue", "darkgreen"),
+       lty = 1 ,
+       bty = "n")
+
+#cox.zph(coxph(Surv(tempo_tuberc, status_tuberc) ~ pneumo, data = hiv_tuberc2))
+```
+
+A curva daqueles com pneumonia (verde) está acima daqueles sem (azul),
+indicando que pessoas com pneumonia têm uma maior probabilidade de não
+desenvolver a doença ao longo do tempo, ou seja, elas permanecem
+"saudáveis" por mais tempo  ( Ver @fig-fig9). Aqueles sem pneumonia têm um risco maior,
+com a curva caindo mais rapidamente, sugerindo que a probabilidade de
+desenvolver tuberculose é maior entre eles. Para a variável pneumonia, o p-valor = 0.66, indicando que não há evidência de violação da suposição de proporcionalidade dos riscos.
+
+
+
+O teste cox.zph foi aplicado para verificar se o pressuposto de riscos
+proporcionais é atendido no modelo de Cox para a variável idade. A
+violação desse pressuposto indica que o efeito da idade sobre o risco de
+desenvolver tuberculose não é constante ao longo do tempo. Ou seja, a
+relação entre a idade e o risco de tuberculose varia durante o período
+de acompanhamento, o que invalida o modelo de Cox simples. Isso sugere
+que, para modelar adequadamente os dados, pode ser necessário ajustar o
+modelo por meio de estratificação.
+
+```{r}
+#| fig-cap: Curvas de Kaplan-Meier para idade estratificada
+#| label: fig-fig11
+
+
+hiv_tuberc2$faixa_idade <- cut(hiv_tuberc2$idade, breaks = c(0, 30, 40, 50, 60, Inf), 
+                               labels = c("≤30", "31-40", "41-50", "51-60", ">60"))
+
+km_idade = survfit(Surv(tempo_tuberc, status_tuberc)~ factor(faixa_idade) , data = hiv_tuberc2)
+
+
+
+plot(km_idade , col = c("red", "blue", "darkgreen", "orange", "purple"),
+     xlab = "Dias de acompanhamento",
+     ylab = "S(t) estimado")
+
+legend("bottomright",legend = c("≤30", "31-40", "41-50", "51-60", ">60"),
+       col = c("red", "blue", "darkgreen", "orange", "purple"),
+       lty = 1 ,
+       bty = "n")
+# Suspeita de violar o pressuposto de riscos proporcionais
+
+#cox.zph(coxph(Surv(tempo_tuberc, status_tuberc) ~ faixa_idade, data = hiv_tuberc2))
+
+# Não viola
+```
+
+O gráfico de Kaplan-Meier ilustra as curvas de sobrevivência para
+diferentes faixas etárias (≤30, 31–40, 41–50, 51–60, \>60 anos) ao longo
+do tempo de acompanhamento  ( Ver @fig-fig11). Observa-se que o grupo mais jovem (≤30 anos,
+linha vermelha) apresenta a maior redução na probabilidade de
+sobrevivência nos primeiros 1.000 dias, indicando um risco mais elevado
+de desfecho adverso nesse período. Por outro lado, os grupos mais velhos
+(\>60 anos, linha roxa, e 51–60 anos, linha verde) apresentam melhores
+probabilidades de sobrevivência, com declínios mais graduais ao longo do
+tempo. Essa tendência sugere que a idade está associada ao risco de
+desfecho, com indivíduos mais jovens apresentando maior vulnerabilidade
+inicial. Apesar disso, as curvas não violam o pressuposto de riscos
+proporcionais,p=  0.55, permitindo o uso do modelo de Cox para análise adicional.
+
+```{r}
+# Carregar pacotes necessários
+library(survival)
+library(survminer)
+library(dplyr)
+library(kableExtra)
+
+# Lista de variáveis do modelo (exceto 'tempo_tuberc' e 
+
+variaveis <- c("sex", "esc", "udi", "sexual", "candida", "herpes", "pneumo", "hemato", "faixa_idade","idade")
+
+# Criar uma lista para armazenar os resultados
+resultados <- data.frame(Covariável = character(),
+                         Logrank = character(),
+                         Wilcoxon = character(),
+                         stringsAsFactors = FALSE)
+
+# Loop para calcular os testes de Logrank e Wilcoxon para cada variável
+for (var in variaveis) {
+  # Criar o modelo Kaplan-Meier para a variável categórica
+  fit_km <- survfit(Surv(tempo_tuberc, status_tuberc) ~ get(var), data = hiv_tuberc2)
+  
+  # Testes de sobrevivência
+  logrank_test <- survdiff(Surv(tempo_tuberc, status_tuberc) ~ get(var), data = hiv_tuberc2, rho = 0)
+  wilcoxon_test <- survdiff(Surv(tempo_tuberc, status_tuberc) ~ get(var), data = hiv_tuberc2, rho = 1)
+  
+  # Extraindo estatísticas e valores p
+  logrank_chisq <- round(logrank_test$chisq, 2)
+  logrank_p <- round(1 - pchisq(logrank_test$chisq, df = length(logrank_test$n) - 1), 3)
+  
+  wilcoxon_chisq <- round(wilcoxon_test$chisq, 2)
+  wilcoxon_p <- round(1 - pchisq(wilcoxon_test$chisq, df = length(wilcoxon_test$n) - 1), 3)
+  
+  # Formatar valores na mesma estrutura desejada
+  logrank_valor <- paste0(logrank_chisq, " (", logrank_p, ")")
+  wilcoxon_valor <- paste0(wilcoxon_chisq, " (", wilcoxon_p, ")")
+  
+  # Adicionar à tabela de resultados
+  resultados <- rbind(resultados, data.frame(Covariável = var,
+                                             Logrank = logrank_valor,
+                                             Wilcoxon = wilcoxon_valor))
+}
+
+```
+
+```{r}
+# Renomear as covariáveis para nomes mais descritivos
+resultados$Covariável <- gsub("sex", "Sexo", resultados$Covariável)
+resultados$Covariável <- gsub("esc", "Escolaridade", resultados$Covariável)
+resultados$Covariável <- gsub("udi", "Uso de Drogas Injetáveis", resultados$Covariável)
+resultados$Covariável <- gsub("sexual", "Orientação Sexual", resultados$Covariável)
+resultados$Covariável <- gsub("candida", "Candidíase", resultados$Covariável)
+resultados$Covariável <- gsub("herpes", "Herpes Zoster", resultados$Covariável)
+resultados$Covariável <- gsub("pneumo", "Pneumonia Pneumocystis", resultados$Covariável)
+resultados$Covariável <- gsub("hemato", "Sinais Hematológicos", resultados$Covariável)
+resultados$Covariável <- gsub("faixa_idade", "Faixa Etária", resultados$Covariável)
+resultados$Covariável <- gsub("idade", "Idade", resultados$Covariável)
+
+
+```
+
+```{r}
+#| tbl-cap: "Testes logrank e de Wilcoxon para igualdade das curvas de sobrevivência."
+#| label: tbl-fig12
+
+resultados %>%
+  kable(
+    col.names = c("Covariável", "Logrank (valor p)", "Wilcoxon (valor p)"),
+    align = "lcc") %>%
+  kable_styling(full_width = FALSE, position = "center") 
+
+```
+
+
+Antes do ajuste desses modelos, será discutido um passo essencial na análise estatística: a seleção de variáveis para entrar no modelo inicial. O teste de Logrank é mais sensível às diferenças nas taxas de risco constantes ao longo do tempo, enquanto o Wilcoxon dá mais peso às diferenças iniciais. A consistência entre os dois testes reforça os resultados significativos encontrados.
+
+
+Com base nos resultados apresentados na @tbl-fig12, verifica-se que  as covariáveis: sexo, Candidíase, Herpes Zoster, Pneumonia, Sinais Hematológicos, Faixa Etária atenderam ao critério estabelecido e, portanto, serão incluídas na etapa de modelagem estatística.  No entanto, a covariável Sinais Hematológicos não vai entrar no modelo inicial de cox pois o pressuposto de risco proporcional não foi atendido.
+
+
+
+
+
+## Modelo de Cox
+
+```{r}
+fit<- coxph(Surv(tempo_tuberc, status_tuberc)~ 
+                     factor(sex)  +factor(faixa_idade) +
+                
+                  factor(candida) + factor(herpes) + 
+                     factor(pneumo), method="breslow", data=hiv_tuberc2)
+
+modelo_saida <- data.frame(
+  Variável = c("factor(sex)M", 
+               "Faixa_idade 31-40", 
+               "Faixa_idade 41-50", 
+               "Faixa_idade 51-60", 
+               "Faixa_idade >60", 
+               "Candidíase", 
+               "Herpes", 
+               "Pneumonia"),
+  Coeficiente = c(0.47180, -0.44308, 0.03101, -1.07200, -0.60898, -1.46973, -2.44748, -1.26070),
+  'exp(Coef)' = c(1.60288, 0.64205, 1.03150, 0.34232, 0.54390, 0.22999, 0.08651, 0.28346),
+  'Erro Padrão' = c(0.24144, 0.25119, 0.29648, 0.72790, 1.01487, 0.31570, 1.00823, 0.46588),
+  Z = c(1.954, -1.764, 0.105, -1.473, -0.600, -4.656, -2.427, -2.706),
+  'P-valor' = c(0.05068, 0.07774, 0.91670, 0.14082, 0.54847, 0.00000323, 0.01520, 0.00681)
+)
+
+# Criar tabela com kable
+kable(modelo_saida, 
+      caption = "Resultados do Modelo de Cox", 
+      col.names = c("Variável", "Coeficiente", "exp(Coef)", "Erro Padrão", "Z", "P-valor"), 
+      digits = 4)  # Arredondar para 4 casas decimais
+
+```
+
+O primeiro modelo de regressão de Cox indicou que a idade não teve impacto significativo no risco, enquanto as  comorbidades apresentaram forte associação com uma redução do risco. Com isso, ajustamos um novo modelo sem essa variável.
+
+
+
+```{r}
+
+
+fit_final <- coxph(Surv(tempo_tuberc, status_tuberc)~ 
+                     factor(sex) +
+                     factor(candida) + factor(herpes) + 
+                     factor(pneumo), method="breslow", data=hiv_tuberc2)
+
+
+modelo_saida <- data.frame(
+  Variável = c("Sexo(Masculino)", 
+               "Candidíase", 
+               "Herpes", 
+               "Pneumonia"),
+  Coeficiente = c(0.46925, -1.49596, -2.42199, -1.25609),
+  'exp(Coef)' = c(1.59879, 0.22403, 0.08874, 0.28477),
+  'Erro Padrão' = c(0.23919, 0.31489, 1.00775, 0.46506),
+  Z = c(1.962, -4.751, -2.403, -2.701),
+  'P-valor' = c(0.04979, 0.00000203, 0.01625, 0.00692)
+)
+
+# Criar tabela com kable
+kable(modelo_saida, 
+      caption = "Resultados do Modelo de Cox", 
+      col.names = c("Variável", "Coeficiente", "exp(Coef)", "Erro Padrão", "Z. valor", "P-valor"),
+      digits = 5)  #
+
+```
+
+Os resultados do modelo de Cox indicam que o sexo masculino está associado a um risco significativamente maior de desenvolver tuberculose, com uma razão de risco (HR) de 1,60  , ou seja, homens têm aproximadamente 59,9% mais chance de desenvolver tuberculose em comparação com mulheres (p = 0.04979).  
+
+Por outro lado, a presença de algumas comorbidades parece estar associada a um menor risco de tuberculose. Indivíduos com candidíase apresentam uma redução de 77,6% no risco da doença (HR = 0,22, p < 0.0001), enquanto aqueles com herpes têm uma redução de 91,1% no risco (HR = 0,089, p = 0.01625). Da mesma forma, a pneumonia foi associada a uma redução de 71,5% no risco de tuberculose (HR = 0,285, p = 0.00692).  
+
+
+
+
+
+```{r}
+#| tab-cap: Análise de resíduos de Schoenfeld
+#| label: tbl-mod12
+
+# Teste de Schoenfeld para verificar a proporcionalidade dos riscos
+schoenfeld_test <- cox.zph(fit_final, transform = "identity")
+
+# Converter os resultados em um data frame corretamente
+a <- as.data.frame(schoenfeld_test$table)
+
+# Exibir a tabela
+kable(a)
+
+```
+
+```{r}
+#| figp: Resíduos de Cox-Snell
+#| label: fig-mod12
+
+# Calcular os resíduos de Cox-Snell
+cox_snell_resid <- residuals(fit_final, type = "martingale")
+
+# Criar o novo tempo ajustado (baseado nos resíduos)
+hiv_tuberc2$cox_snell <- -log(1 - cox_snell_resid)
+
+# Ajustar a sobrevivência aos resíduos de Cox-Snell
+km_fit <- survfit(Surv(cox_snell, status_tuberc) ~ 1, data = hiv_tuberc2)
+
+# Gráfico dos resíduos de Cox-Snell
+plot(km_fit$time, -log(km_fit$surv), 
+     type = "l", lwd = 1, col = "blue",
+     xlab = "Resíduos de Cox-Snell", 
+     ylab = "-log(Sobrevivência acumulada estimada)",
+     main = "Resíduos de Cox-Snell")
+```
+
+
+Foi feita a análise de resíduos de Schoenfeld,para avaliar a suposição de riscos proporcionais. Ao nível de significância de 5%, nenhuma variável apresenta violação do pressuposto. Também foi feito um gráfico utilizando os resíduos de Cox-Snell, que avalia a qualidade global do modelo. Nota-se que os resíduos seguem uma distribuição exponencial, então pode-se dizer que o modelo está bemajustado.
+
+## Modelo Paramétrico
+
+Usando um modelo paramétrico, estamos modelando o tempo de falha para uma distribuição específica. O primeiro passo é entender qual distribuição melhor descreve esse tempo, para assim se ter o modelo mais adequado de interpretação. Estará sendo avaliado os modelos Exponencial, Weibull e o Log-normal.
+
+Analisando a tabela, vemos os resultados dos testes da razão de
+verossimilhança para as hipóteses de que: i) o modelo de Weibull é adequado, ii) o modelo lognormal é adequado e iii) o modelo exponencial é adequado, sendo realizados utilizando-se o modelo gama generalizado.
+Pelos valores, vemos que o modelo Log-normal é o mais adequado.
+
+```{r}
+
+fit_exp <- survreg(Surv(tempo_tuberc, status_tuberc)~ 
+                     factor(sex) +  factor(faixa_idade ) +
+          
+                     factor(candida) + factor(herpes) + 
+                     factor(pneumo)+ factor(hemato),dist='exponential', data= hiv_tuberc2)
+
+
+
+fit_weibull <- survreg(Surv(tempo_tuberc, status_tuberc)~ 
+                     factor(sex) +  factor(faixa_idade ) +
+          
+                     factor(candida) + factor(herpes) + 
+                     factor(pneumo)+ factor(hemato), 
+                        dist = 'weibull', data = hiv_tuberc2)
+
+
+
+
+fit_lognormal <-survreg(Surv(tempo_tuberc, status_tuberc)~ 
+                     factor(sex) +  factor(faixa_idade ) +
+          
+                     factor(candida) + factor(herpes) + 
+                     factor(pneumo)+ factor(hemato), 
+                        dist='lognormal', data = hiv_tuberc2)
+
+
+library(flexsurv)
+fit_ggamma <- flexsurvreg(Surv(tempo_tuberc, status_tuberc) ~ 
+                          factor(sex) +  factor(faixa_idade) +
+                          factor(candida) + factor(herpes) + 
+                          factor(pneumo) + factor(hemato), 
+                          data = hiv_tuberc2,
+                          dist = "gengamma")
+
+
+```
+
+```{r}
+# Extraindo log-verossimilhança
+logLik_ggamma <- fit_ggamma$loglik
+logLik_weibull <- logLik(fit_weibull)
+logLik_lognormal <- logLik(fit_lognormal)
+logLik_exp <- logLik(fit_exp)
+
+# Teste de Razão de Verossimilhança (TRV) comparando a Gama Generalizada com os outros modelos
+trv_ggamma_weibull <- 2 * (as.numeric(logLik_ggamma) - as.numeric(logLik_weibull))
+trv_ggamma_lognormal <- 2 * (as.numeric(logLik_ggamma) - as.numeric(logLik_lognormal))
+trv_ggamma_exp <- 2 * (as.numeric(logLik_ggamma) - as.numeric(logLik_exp))
+
+# Graus de liberdade (diferença no número de parâmetros entre os modelos)
+df_ggamma_weibull <- length(coef(fit_ggamma)) - length(coef(fit_weibull))
+df_ggamma_lognormal <- length(coef(fit_ggamma)) - length(coef(fit_lognormal))
+df_ggamma_exp <- length(coef(fit_ggamma)) - length(coef(fit_exp))
+
+# Valores-p para os testes (Qui-quadrado)
+pval_ggamma_weibull <- pchisq(trv_ggamma_weibull, df_ggamma_weibull, lower.tail = FALSE)
+pval_ggamma_lognormal <- pchisq(trv_ggamma_lognormal, df_ggamma_lognormal, lower.tail = FALSE)
+pval_ggamma_exp <- pchisq(trv_ggamma_exp, df_ggamma_exp, lower.tail = FALSE)
+```
+
+```{r}
+# Criando a tabela com os resultados
+tabela_trv <- tibble::tibble(
+  Comparação = c("Weibull", 
+                 " Lognormal", 
+                 " Exponencial"),
+  TRV = c(trv_ggamma_weibull, trv_ggamma_lognormal, trv_ggamma_exp),
+  GL = c(df_ggamma_weibull, df_ggamma_lognormal, df_ggamma_exp),
+  `Valor-p` = c(pval_ggamma_weibull, pval_ggamma_lognormal, pval_ggamma_exp)
+)
+
+# Exibir tabela formatada
+kable(tabela_trv)
+
+```
+
+```{r}
+# Carregar a biblioteca necessária
+library(kableExtra)
+library(dplyr)
+
+
+
+# Criando o dataframe formatado corretamente
+tabela_resultados <- data.frame(
+    Variável = c("Intercepto", 
+                 "Sexo (Masculino)", 
+                 "Idade 31-40", "Idade 41-50", "Idade 51-60", "Idade >60",
+                 "Candidíase", "Herpes", "Pneumocistose", "Doença Hematológica",
+                 "Log(Scale)"),
+    Estimativa = c(5.076, -0.611, 0.685, 0.522, 0.628, 1.413, 
+                   3.769, 4.557, 3.569, 4.026, 0.441),
+    `Erro Padrão` = c(0.317, 0.278, 0.286, 0.361, 0.686, 1.298, 
+                      0.365, 0.750, 0.471, 0.381, 0.078),
+    `z-valor` = c(16.03, -2.19, 2.39, 1.44, 0.92, 1.09, 
+                  10.33, 6.08, 7.58, 10.56, 5.65),
+    `p-valor` = c("8.32e-58", "2.83e-02", "1.67e-02", "1.49e-01", "3.60e-01", "2.76e-01",
+                  "5.35e-25", "1.23e-09", "3.36e-14", "4.40e-26", "1.57e-08")
+)
+
+# Exibir o dataframe formatado
+kable(tabela_resultados)
+
+
+```
+
+
+Já sabendo que o tempo de falha melhor segue uma distribuição lognormal,precisa se saber qual o melhor modelo a se construir com essa distribuição. Para isso, segue-se com o método de backward selection. O modelo final ficaram as variáveis sexo, Candidíase, Herpes,  Pneumocistos e Doença Hematológica
+
+```{r}
+
+
+# Seleção backward usando stepAIC
+library(MASS)
+#fit_lognormal_backward <- stepAIC(fit_lognormal, direction = "backward")
+
+# Carregar a biblioteca necessária
+library(kableExtra)
+
+
+library(knitr)
+
+# Criar a tabela com a razão de chance (exp(Estimativa))
+tabela_resultados <- data.frame(
+  Variável = c("Intercepto", 
+               "Sexo (Masculino)", 
+               "Candidíase", 
+               "Herpes", 
+               "Pneumocistose", 
+               "Doença Hematológica", 
+               "Log(Scale)"),
+  Estimativa = c(5.491, -0.600, 3.816, 4.555, 3.555, 3.943, 0.453),
+  `OR` = round(exp(c(5.491, -0.600, 3.816, 4.555, 3.555, 3.943, 0.453)), 3),
+  `Erro Padrão` = c(0.274, 0.273, 0.369, 0.767, 0.469, 0.370, 0.078),
+  `z-valor` = c(20.04, -2.20, 10.34, 5.94, 7.58, 10.65, 5.80),
+  `p-valor` = c("< 2e-16", "0.028", "< 2e-16", "2.9e-09", "3.3e-14", "< 2e-16", "6.6e-09")
+)
+
+# Exibir a tabela formatada
+kable(tabela_resultados, format = "pipe", align = "c")
+
+
+```
+
+
+O modelo de sobrevivência Lognormal indicam que diversas condições clínicas estão fortemente associadas ao risco de desenvolver tuberculose. As variáveis candidíase, herpes, pneumocistose e doença hematológica apresentaram razões de chance elevadas, sugerindo que indivíduos com essas condições possuem um risco significativamente maior de desenvolver a doença. Dentre elas, a presença de herpes se destacou com a maior razão de chance (OR = 95.107), evidenciando um impacto expressivo na progressão para tuberculose.
+
+Além disso, o sexo masculino apresentou um efeito protetor moderado, com uma razão de chance inferior a 1 (OR = 0.549), indicando que homens possuem um risco ligeiramente menor em comparação com as mulheres. Essa diferença pode estar relacionada a fatores biológicos ou comportamentais que influenciam a suscetibilidade à tuberculose.
+
+
+
+
+
+```{r}
+#| fig-cap: Adequação do modelo paramétrico
+#| label: fig-mod56
+
+time<-km_geral$time
+stln<- pnorm((-log(time)+ 5.49)/1.57)
+
+plot(km_geral, conf.int=F, xlab="Tempos", ylab="S(t)")
+lines(c(0,time),c(1,stln), lty=2)
+legend(25,0.8,lty=c(1,2),c("Kaplan-Meier", "Log-normal"),bty="n",cex=0.8)
+
+```
+
+Contudo, analisando o @fig-mod56 , que mostra as curvas de sobrevivência
+estimadas por Kaplan-Meier e pelo modelo log-normal, nota-se que o
+modelo não é adequado para a análise desses dados.
+
+# Conclusão
+
+Embora o modelo Lognormal tenha se mostrado o mais adequado entre as distribuições testadas (Weibull, Lognormal e Exponencial), a comparação com as curvas de Kaplan-Meier revelou que o ajuste do modelo não foi ideal, o que sugere que, apesar de suas forças, ele não é totalmente adequado para este conjunto de dados.
+
+Ao comparar o desempenho dos modelos, o Modelo de Cox se destacou por sua robustez e bom ajuste aos dados. Ele forneceu resultados significativos. O Modelo de Cox é particularmente vantajoso em estudos de sobrevivência, pois não exige suposições rígidas sobre a distribuição dos dados e é capaz de lidar com as variáveis explicativas de forma eficiente, mostrando a relação entre as covariáveis e o tempo de sobrevivência.
+
+Por outro lado, o Modelo Paramétrico Lognormal, embora útil para detalhar o tempo de falha e modelar distribuições específicas de risco, não apresentou o mesmo nível de adequação quando comparado ao Modelo de Cox. A comparação com as curvas de Kaplan-Meier indicou que o modelo Lognormal não conseguiu capturar adequadamente os padrões de sobrevivência observados nos dados. Isso sugere que, apesar de ser uma ferramenta importante, o modelo paramétrico Lognormal não deve ser priorizado neste contexto, uma vez que não representa de forma ideal a dinâmica de sobrevivência dos dados.
+
+Em conclusão, o Modelo de Cox revelou-se mais adequado para este estudo, com uma interpretação mais clara e resultados mais confiáveis. O Modelo Lognormal, por sua vez, pode ser descartado como a melhor opção, dado o seu desempenho inferior em relação às curvas de Kaplan-Meier. Portanto, recomenda-se o uso do Modelo de Cox para uma análise mais precisa e robusta do tempo de sobrevivência e dos fatores associados.
