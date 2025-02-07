@@ -1,7 +1,7 @@
 ---
 title: "Analise de sobrevivência"
 subtitle: "Tempo até a ocorrência da tuberculose"
-author: "Eliana, Luanna, Barbara, Maria Cecília, Sofia, Victor"
+author: "Eliana Cardoso Gonlçalves"
 date: "02/03/2025"  # Data atual
 date-format: short  # formatação dd/mm/aaaa
 lang: pt  # linguagem
@@ -56,7 +56,7 @@ library(survminer)
 library(dplyr)
 library(kableExtra)
 
-setwd("C:/Users/eliana.cardoso/OneDrive - Fundação Dom Cabral/Documentos/GitHub/Analise de Sobrevivencia")
+setwd("C:/Users/eliana.cardoso/OneDrive - Fundação Dom Cabral/Documentos/GitHub/Analise-de-Sobrevivencia")
 library(readxl)
 hiv_tuberc <- read_excel("hiv_tuberc.xlsx")
 
